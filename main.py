@@ -1,7 +1,10 @@
+from typing import List
+
 import numpy as np
 import pywintypes
 from docx import Document
 import pandas as pd
+from docx.text.paragraph import Paragraph
 from jinja2 import Environment, BaseLoader, TemplateSyntaxError
 import argparse
 import os
@@ -62,7 +65,7 @@ def main():
         table_cells = [docx_file.tables[tb].cell(rw, cl) for tb in range(len(docx_file.tables)) for rw in
                        range(len(docx_file.tables[tb].rows)) for cl in range(len(docx_file.tables[tb].columns))]
 
-        paragraphs = [*docx_file.paragraphs, *[ph for cell in table_cells for ph in cell.paragraphs]]
+        paragraphs: List[Paragraph] = [*docx_file.paragraphs, *[ph for cell in table_cells for ph in cell.paragraphs]]
 
         for paragraph in paragraphs:
             token = None
@@ -72,15 +75,17 @@ def main():
 
                 if token:
                     token.text = token.text + run.text
-                    run.text = ""
-                    if "}}" in run.text and "{{" not in run.text:
+                    if "}}" in run.text and "{{" not in run.text or (run.text.startswith("}") and token.text.endswith("}")):
                         token = None
+                    run.text = ""
 
                 if "{{" in run.text:
                     try:
                         run.text = fill(run.text, **kwargs)
                     except TokenException:
                         token = run
+                elif run.text.endswith("{") and paragraph.runs[run_idx + 1].text.startswith("{"):
+                    token = run
 
         for paragraph in paragraphs:
             for run in paragraph.runs:
@@ -95,6 +100,7 @@ def main():
             new_doc_path = "".join(sep[:-1]) + f" ({(idx := idx + 1)})." + sep[-1]
 
         docx_file.save(new_doc_path)
+        print("Ready: ", new_doc_path)
 
         idx_to_drop.append(idx)
 
