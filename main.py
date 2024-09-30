@@ -1,14 +1,21 @@
 import numpy as np
 from docx import Document
 import pandas as pd
-from jinja2 import Environment, BaseLoader
+from jinja2 import Environment, BaseLoader, TemplateSyntaxError
 import argparse
 import os
 
 
+class TokenException(BaseException):
+    pass
+
+
 def fill(string, **kwargs):
-    template = Environment(loader=BaseLoader()).from_string(string)
-    return template.render(**kwargs)
+    try:
+        template = Environment(loader=BaseLoader()).from_string(string)
+        return template.render(**kwargs)
+    except TemplateSyntaxError:
+        raise TokenException(f"Wrong token in run: {string}")
 
 
 def main():
@@ -25,7 +32,6 @@ def main():
 
     table = pd.read_excel(table_path)
     table_copy = None
-    docx_file_idx = 0
 
     if args.save_failed:
         table_copy = table.copy()
@@ -49,15 +55,39 @@ def main():
         except ValueError:
             continue
 
-        for paragraph in docx_file.paragraphs:
+        table_cells = [docx_file.tables[tb].cell(rw, cl) for tb in range(len(docx_file.tables)) for rw in range(len(docx_file.tables[tb].rows)) for cl in range(len(docx_file.tables[tb].columns))]
+
+        paragraphs = [*docx_file.paragraphs, *[ph for cell in table_cells for ph in cell.paragraphs]]
+
+        for paragraph in paragraphs:
+            token = None
+
+            for run_idx in range(len(paragraph.runs)):
+                run = paragraph.runs[run_idx]
+
+                if token:
+                    token.text = token.text + run.text
+                    run.text = ""
+                    if "}}" in run.text and "{{" not in run.text:
+                        token = None
+
+                if "{{" in run.text:
+                    try:
+                        run.text = fill(run.text, **kwargs)
+                    except TokenException:
+                        token = run
+
+        for paragraph in paragraphs:
             for run in paragraph.runs:
                 run.text = fill(run.text, **kwargs)
 
         new_doc_path = fill(os.path.join(args.path, docx_path), **kwargs)
+        buff = new_doc_path
 
-        if os.path.exists(new_doc_path):
-            sep = new_doc_path.split(".")
-            new_doc_path = "".join(sep[:-1]) + f" ({(docx_file_idx := docx_file_idx + 1)})." + sep[-1]
+        idx = 0
+        while os.path.exists(new_doc_path):
+            sep = buff.split(".")
+            new_doc_path = "".join(sep[:-1]) + f" ({(idx := idx + 1)})." + sep[-1]
 
         docx_file.save(new_doc_path)
 
