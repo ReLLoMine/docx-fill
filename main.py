@@ -1,9 +1,11 @@
 import numpy as np
+import pywintypes
 from docx import Document
 import pandas as pd
 from jinja2 import Environment, BaseLoader, TemplateSyntaxError
 import argparse
 import os
+from docx2pdf import convert
 
 
 class TokenException(BaseException):
@@ -20,10 +22,12 @@ def fill(string, **kwargs):
 
 def main():
     arg_parser = argparse.ArgumentParser(description="Docx fill app")
-    arg_parser.add_argument("docx", type=str, help="docx file path")
-    arg_parser.add_argument("table", type=str, help="table path (.xlsx)")
-    arg_parser.add_argument("--path", type=str, default="", help="path where to save all files")
-    arg_parser.add_argument("--save_failed", type=bool, default=False, help="to export failed rows")
+    arg_parser.add_argument("docx", type=str, help="Docx file path")
+    arg_parser.add_argument("table", type=str, help="Table file path (.xlsx)")
+    arg_parser.add_argument("--path", type=str, default="", help="Path where all files wil be stored")
+    arg_parser.add_argument("--save_failed", action="store_true", help="To export failed rows")
+    arg_parser.add_argument("--render_pdf", action="store_true", help="To render docx to pdf")
+    arg_parser.add_argument("--version", action="version", version="Docx fill app 0.2")
 
     args = arg_parser.parse_args()
 
@@ -55,7 +59,8 @@ def main():
         except ValueError:
             continue
 
-        table_cells = [docx_file.tables[tb].cell(rw, cl) for tb in range(len(docx_file.tables)) for rw in range(len(docx_file.tables[tb].rows)) for cl in range(len(docx_file.tables[tb].columns))]
+        table_cells = [docx_file.tables[tb].cell(rw, cl) for tb in range(len(docx_file.tables)) for rw in
+                       range(len(docx_file.tables[tb].rows)) for cl in range(len(docx_file.tables[tb].columns))]
 
         paragraphs = [*docx_file.paragraphs, *[ph for cell in table_cells for ph in cell.paragraphs]]
 
@@ -92,6 +97,12 @@ def main():
         docx_file.save(new_doc_path)
 
         idx_to_drop.append(idx)
+
+    if args.render_pdf:
+        try:
+            convert(args.path)
+        except pywintypes.com_error:
+            print("Seems like you dont have Microsoft Word installed.")
 
     if args.save_failed:
         table_copy = table_copy.drop(idx_to_drop)
