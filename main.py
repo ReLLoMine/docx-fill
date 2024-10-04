@@ -9,13 +9,30 @@ from jinja2 import Environment, BaseLoader, TemplateSyntaxError
 import argparse
 import os
 from docx2pdf import convert
+from docxcompose.composer import Composer
 
 
-def paragragph_contains_image(paragraph: Paragraph) -> bool:
+def merge_docs(output_path, *input_paths):
+    base_doc = Document(input_paths[0])
+    base_doc.add_page_break()
+    composer = Composer(base_doc)
+
+    for file_path in input_paths[1:]:
+        doc = Document(file_path)
+        doc.add_page_break()
+        composer.append(doc)
+
+    composer.save(output_path)
+    print(f"Documents merged successfully into {output_path}")
+
+
+def paragraph_contains_image(paragraph: Paragraph) -> bool:
     return bool(
         paragraph._p.xpath(
-            "./w:r/w:drawing/*[self::wp:inline | self::wp:anchor]/a:graphic/a:graphicData/pic:pic"
+            "./w:r/w:drawing"
         )
+    ) or (
+            "<mc:AlternateContent" in paragraph._p.xml and "<mc:Choice" in paragraph._p.xml and "<w:drawing>" in paragraph._p.xml
     )
 
 
@@ -36,6 +53,7 @@ def main():
     arg_parser.add_argument("docx", type=str, help="Docx file path")
     arg_parser.add_argument("table", type=str, help="Table file path (.xlsx)")
     arg_parser.add_argument("--path", type=str, default="", help="Path where all files wil be stored")
+    arg_parser.add_argument("--merge", type=str, default="", help="Merge all .docx files")
     arg_parser.add_argument("--save_failed", action="store_true", help="To export failed rows")
     arg_parser.add_argument("--render_pdf", action="store_true", help="To render docx to pdf")
     arg_parser.add_argument("--version", action="version", version="Docx fill app 0.2")
@@ -53,6 +71,7 @@ def main():
     table_dict = table.to_dict()
 
     idx_to_drop = []
+    all_files = []
 
     if not os.path.exists(args.path):
         os.makedirs(args.path, exist_ok=True)
@@ -97,22 +116,26 @@ def main():
                     token = run
 
         for paragraph in paragraphs:
-            if not paragragph_contains_image(paragraph):
+            if not paragraph_contains_image(paragraph):
                 for run in paragraph.runs:
                     run.text = fill(run.text, **kwargs)
 
         new_doc_path = fill(os.path.join(args.path, docx_path), **kwargs)
         buff = new_doc_path
 
-        idx = 0
+        save_idx = 0
         while os.path.exists(new_doc_path):
             sep = buff.split(".")
-            new_doc_path = "".join(sep[:-1]) + f" ({(idx := idx + 1)})." + sep[-1]
+            new_doc_path = "".join(sep[:-1]) + f" ({(save_idx := save_idx + 1)})." + sep[-1]
 
+        all_files.append(new_doc_path)
         docx_file.save(new_doc_path)
         print("Ready: ", new_doc_path)
 
         idx_to_drop.append(idx)
+
+    if args.merge:
+        merge_docs(args.merge, *all_files)
 
     if args.render_pdf:
         try:
