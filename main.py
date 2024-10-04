@@ -11,6 +11,14 @@ import os
 from docx2pdf import convert
 
 
+def paragragph_contains_image(paragraph: Paragraph) -> bool:
+    return bool(
+        paragraph._p.xpath(
+            "./w:r/w:drawing/*[self::wp:inline | self::wp:anchor]/a:graphic/a:graphicData/pic:pic"
+        )
+    )
+
+
 class TokenException(BaseException):
     pass
 
@@ -75,7 +83,8 @@ def main():
 
                 if token:
                     token.text = token.text + run.text
-                    if "}}" in run.text and "{{" not in run.text or (run.text.startswith("}") and token.text.endswith("}")):
+                    if "}}" in run.text and "{{" not in run.text or (
+                            run.text.startswith("}") and token.text.endswith("}")):
                         token = None
                     run.text = ""
 
@@ -88,8 +97,9 @@ def main():
                     token = run
 
         for paragraph in paragraphs:
-            for run in paragraph.runs:
-                run.text = fill(run.text, **kwargs)
+            if not paragragph_contains_image(paragraph):
+                for run in paragraph.runs:
+                    run.text = fill(run.text, **kwargs)
 
         new_doc_path = fill(os.path.join(args.path, docx_path), **kwargs)
         buff = new_doc_path
